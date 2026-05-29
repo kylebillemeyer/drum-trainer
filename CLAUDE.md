@@ -2,7 +2,7 @@
 
 Browser-based visual drum trainer for the Roland TD-27. A Rock Band-style 3D note highway connected to a real MIDI kit, focused on analytical practice (timing + velocity feedback) — no scores, no gamification.
 
-Full spec: `SPEC.md`. Design decisions and rationale: `docs/vision.md`.
+Design decisions and rationale: `docs/vision.md`.
 
 ## Repo layout
 
