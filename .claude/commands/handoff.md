@@ -6,7 +6,7 @@ Steps:
 2. Run `gh pr list --state open` and `gh issue list --state open` to get current PR and issue state.
 3. Run `git diff main...HEAD --stat` to summarise what has changed on this branch vs main.
 
-Then write (or overwrite) `HANDOFF.md` in the project root with the following structure. Be terse — bullet points, no prose padding.
+Then write a new file at `handoffs/YYYY-MM-DD-HH-MM.md` (using the current date and time) with the following structure. Be terse — bullet points, no prose padding.
 
 ---
 
@@ -34,4 +34,4 @@ Any non-obvious choices made this session that aren't yet captured in docs/visio
 
 ---
 
-After writing the file, print the path and a one-line summary of what was captured.
+After writing the file, print the full path so it can be passed to a new session.
