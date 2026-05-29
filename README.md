@@ -2,7 +2,7 @@
 
 A browser-based visual drum trainer for electronic drum kits. Displays a Rock Band-style 3D scrolling note highway connected to a real MIDI drum kit, with per-hit timing and velocity feedback for analytical practice — no scores, no gamification.
 
-See [SPEC.md](./SPEC.md) for the full product specification.
+See [SPEC.md](./SPEC.md) for the full product specification and [docs/vision.md](./docs/vision.md) for the project vision and design decisions.
 
 ---
 
