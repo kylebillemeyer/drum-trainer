@@ -6,7 +6,11 @@ Steps:
 2. Run `gh pr list --state open` and `gh issue list --state open` to get current PR and issue state.
 3. Run `git diff main...HEAD --stat` to summarise what has changed on this branch vs main.
 
-Then write a new file at `handoffs/YYYY-MM-DD-HH-MM.md` (using the current date and time) with the following structure. Be terse — bullet points, no prose padding.
+Then write a new file at `handoffs/YYYY-MM-DD-HH-MM-<descriptor>.md` where:
+- `YYYY-MM-DD-HH-MM` is the current date and time
+- `<descriptor>` is a 2–4 word kebab-case summary of the primary thing worked on this session (e.g. `three-js-highway`, `midi-input`, `hit-detection`). Derive it from the commits and work done — not the branch name.
+
+Use the following structure. Be terse — bullet points, no prose padding.
 
 ---
 
