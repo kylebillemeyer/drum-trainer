@@ -1,45 +1,35 @@
-Generate a concise handoff document for a fresh Claude Code session to continue work on this project. The file should be context-efficient — a new agent should be able to read it and immediately understand the project, current state, and where to pick up.
+Generate a concise handoff document capturing the current session's ephemeral state — branch, recent work, and what to pick up next. Persistent project context lives in CLAUDE.md files and docs/vision.md and does not need to be repeated here.
 
-Follow these steps:
+Steps:
 
-1. Run `git status`, `git log --oneline -10`, and `git branch` to understand the current branch and recent commits.
-2. Run `gh issue list --state open` to get the open GitHub issues.
-3. Read `SPEC.md`, `docs/vision.md`, and `README.md` for project context.
-4. Scan `frontend/src/` to understand the current file structure.
+1. Run `git status`, `git log --oneline -10`, and `git branch` to capture the current branch, any uncommitted changes, and recent commits.
+2. Run `gh pr list --state open` and `gh issue list --state open` to get current PR and issue state.
+3. Run `git diff main...HEAD --stat` to summarise what has changed on this branch vs main.
 
-Then write a file called `HANDOFF.md` in the project root with the following sections. Be terse — bullet points over prose, no fluff.
+Then write (or overwrite) `HANDOFF.md` in the project root with the following structure. Be terse — bullet points, no prose padding.
 
 ---
 
-## HANDOFF.md structure
-
 ```markdown
-# Handoff — <project name>
+# Handoff — <date>
 
-_Generated <date>. For use as context in a fresh Claude Code session._
+## Branch / PR
+- Current branch and what it contains
+- Open PR number and link if one exists
+- Any uncommitted changes worth noting
 
-## What this project is
-One short paragraph. What are we building and why.
+## What was worked on
+Bullet list of concrete things completed or changed this session.
 
-## Current state
-- Active branch and what it contains
-- What has been built and is working
-- What is visibly incomplete or broken
+## Current status
+- What is working right now
+- What is visibly broken or incomplete
 
-## Key decisions made
-Bullet list of non-obvious architectural and design decisions, with brief rationale. Skip anything self-evident from reading the code.
+## Next task
+The single most logical thing to pick up, with the GitHub issue number. One sentence on why it's first.
 
-## Open issues (GitHub)
-Numbered list matching the GitHub issues, each one line.
-
-## What to work on next
-The single most logical next task, and why it unblocks everything else.
-
-## Critical files
-Short list of files a new agent should read first to get oriented, with one-line descriptions.
-
-## Gotchas
-Any non-obvious constraints, workarounds, or things that burned time and should not be repeated.
+## Session-specific decisions
+Any non-obvious choices made this session that aren't yet captured in docs/vision.md or CLAUDE.md. If nothing, omit this section.
 ```
 
 ---
