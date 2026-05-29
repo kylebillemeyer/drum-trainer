@@ -55,10 +55,10 @@ MIDI files are authored in a DAW or Soundslice (which exports `.mid` directly). 
 Notes scroll from right to left (flat view) or toward the viewer from a vanishing point (3D view). The hit zone is where notes must be struck.
 
 **Visual design decisions made:**
-- **3D perspective view** is the primary view. Notes are 3D boxes lying flat on the track surface, with a visible top face and a darker front face for depth. Billboard-style flat gems were prototyped and rejected.
+- **3D perspective view** is the primary view. Notes are real 3D box meshes lying flat on the track surface, shaded by a directional light so the top face is brighter than the sides — no manual color math needed. Billboard-style flat gems were prototyped and rejected.
 - **Flat 2D view** is preserved as a toggle for comparison or accessibility.
-- **Perspective projection** uses a true `1/z` formula (`factor = D / (D + t)`) so notes appear slow in the distance and accelerate toward the hit zone — matching real perspective and the feel of rhythm games.
-- **Velocity** is encoded in gem opacity/brightness (brighter = harder hit).
+- **Velocity** is encoded as emissive glow intensity on each note box — louder hits glow brighter.
+- **Depth fading** is handled by Three.js exponential fog rather than manual per-note alpha calculations.
 - **Zone visualization** (rim vs centre, bow vs bell vs edge) is deferred to a later prototyping stage.
 
 ---
@@ -108,14 +108,17 @@ Timing offset and velocity delta are available per note. Bars with elevated miss
 |---|---|---|
 | Platform | Browser (Chrome/Edge only) | Web MIDI API availability; WebGL performance is sufficient |
 | Framework | Next.js + TypeScript | User preference; SSR unused but not harmful |
-| Highway rendering | PixiJS v8 (WebGL canvas) | Performant 2D rendering; sufficient for faked 3D perspective |
+| 3D highway rendering | Three.js | Real PerspectiveCamera and BoxGeometry — perspective, lighting, and fog handled natively |
+| Flat highway rendering | PixiJS v8 (WebGL canvas) | Lightweight 2D canvas for the flat view |
 | MIDI input | Web MIDI API | Direct USB MIDI access, sub-5ms latency in Chrome |
 | Audio playback | Web Audio API (AudioContext) | Sample-accurate timing, pitch-corrected playback |
 | Build tool | Vite (via Next.js) | Standard |
 
 **Why Chrome only**: The Web MIDI API is not supported in Firefox or Safari without extensions. For a personal tool used at a desk with a specific drum kit, this is an acceptable constraint.
 
-**Why PixiJS over Three.js**: The highway is a faked 3D effect using 2D projection math. A full 3D engine adds complexity and overhead we don't need. PixiJS gives us a fast WebGL canvas and a clean 2D drawing API.
+**Why Three.js for the 3D view**: We initially implemented the 3D highway by manually projecting a 2D PixiJS canvas using `1/z` perspective math. This produced correct results but required custom code for perspective, face shading, and depth fog — all things a 3D library handles natively. Switching to Three.js with a real `PerspectiveCamera` and `BoxGeometry` eliminated that code entirely and produced noticeably better visuals: proper face shading from a directional light, natural exponential fog, and correct perspective without any manual projection math.
+
+**Why PixiJS for the flat view**: The flat 2D highway has no perspective requirements, so a lightweight 2D canvas library is the right fit there. PixiJS remains for that view.
 
 ---
 
