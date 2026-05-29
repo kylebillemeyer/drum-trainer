@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Application, Graphics, Text, TextStyle } from 'pixi.js';
+import * as THREE from 'three';
 import { DrumTrack } from '@/types/music';
 import { LANES, LANE_INDEX } from '@/lib/lanes';
 
@@ -12,49 +12,20 @@ interface Props {
   lookaheadSeconds?: number;
 }
 
-// Highway geometry
-const HORIZON_Y  = 0.30;  // horizon line (fraction of screen height from top)
-const HIT_Y      = 0.86;  // hit zone (fraction of screen height from top)
-const HWY_W_HIT  = 0.80;  // highway width at hit zone (fraction of screen width)
+// World-space constants
+const UNITS_PER_SEC  = 8;    // how many world units = 1 second of track time
+const LANE_W         = 1.0;  // world units wide per lane
+const LANE_GAP       = 0.06;
+const NOTE_H         = 0.20; // note box height (Y)
+const NOTE_DEPTH_SEC = 0.07; // note box depth in seconds
+const NOTE_DEPTH     = NOTE_DEPTH_SEC * UNITS_PER_SEC;
+const TRACK_LENGTH   = 300;  // how far the lane surfaces extend
 
-// Perspective constant D:  factor = D / (D + t/lookahead)
-// Smaller D = stronger perspective (faster acceleration near viewer).
-// D = 0.5 gives a ~3:1 speed ratio between hit zone and far end.
-const PERSPECTIVE_D = 0.5;
+const N              = LANES.length;
+const TOTAL_W        = N * LANE_W + (N - 1) * LANE_GAP;
 
-// Depth of each note box along the track (seconds)
-const NOTE_DEPTH_SEC = 0.07;
-// Height of the front face of a box at the hit zone (pixels at scale=1)
-const BOX_FACE_H = 24;
-
-const N = LANES.length;
-
-function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
-
-function darken(hex: number, f: number): number {
-  return (Math.round(((hex >> 16) & 0xff) * f) << 16)
-       | (Math.round(((hex >>  8) & 0xff) * f) <<  8)
-       |  Math.round((hex         & 0xff) * f);
-}
-
-/**
- * True perspective projection.
- * tSec = seconds until this point crosses the hit zone (0 = at hit zone, lookahead = far end).
- * Returns screen (x, y) and a scale factor (1 at hit zone, <1 further away).
- */
-function project(normX: number, tSec: number, lookaheadSeconds: number, W: number, H: number) {
-  const hitY   = H * HIT_Y;
-  const horizY = H * HORIZON_Y;
-  const wHit   = W * HWY_W_HIT;
-
-  // 1/z perspective: factor → 1 at t=0, → 0 as t → ∞
-  const factor = PERSPECTIVE_D / (PERSPECTIVE_D + Math.max(0, tSec) / lookaheadSeconds);
-
-  return {
-    x:     W / 2 + normX * wHit * factor,
-    y:     horizY + (hitY - horizY) * factor,
-    scale: factor,
-  };
+function laneX(i: number) {
+  return -TOTAL_W / 2 + i * (LANE_W + LANE_GAP) + LANE_W / 2;
 }
 
 export default function DrumHighway3D({
@@ -64,8 +35,8 @@ export default function DrumHighway3D({
   lookaheadSeconds = 3,
 }: Props) {
   const containerRef     = useRef<HTMLDivElement>(null);
-  const appRef           = useRef<Application | null>(null);
   const playingRef       = useRef(playing);
+  const playbackRateRef  = useRef(playbackRate);
   const currentTimeRef   = useRef(0);
   const lastTimestampRef = useRef<number | null>(null);
 
@@ -75,57 +46,183 @@ export default function DrumHighway3D({
   }, [playing]);
 
   useEffect(() => {
+    playbackRateRef.current = playbackRate;
+  }, [playbackRate]);
+
+  useEffect(() => {
     if (!containerRef.current) return;
     const container = containerRef.current;
-    let app: Application;
-    let ro: ResizeObserver;
-    let destroyed = false;
+    const { width, height } = container.getBoundingClientRect();
+    const W = width  || 800;
+    const H = height || 500;
 
-    async function init() {
-      const { width, height } = container.getBoundingClientRect();
-      app = new Application();
-      await app.init({
-        width:  width  || 800,
-        height: height || 400,
-        backgroundColor: 0x05050a,
-        antialias: true,
-        autoDensity: true,
-        resolution: window.devicePixelRatio || 1,
+    // ── Scene ──────────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x05050a);
+    // Subtle exponential fog — fades the far end of the track naturally
+    scene.fog = new THREE.FogExp2(0x05050a, 0.012);
+
+    // ── Camera ────────────────────────────────────────────────────────
+    // Positioned above and slightly behind the hit zone (Z=0), looking forward
+    const camera = new THREE.PerspectiveCamera(62, W / H, 0.1, 500);
+    camera.position.set(0, 4.2, -4.5);
+    camera.lookAt(0, 0, 40);
+
+    // ── Renderer ──────────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(W, H);
+    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.domElement.style.display = 'block';
+    renderer.domElement.style.width  = '100%';
+    renderer.domElement.style.height = '100%';
+    container.appendChild(renderer.domElement);
+
+    // ── Lighting ──────────────────────────────────────────────────────
+    // Ambient — base fill so nothing is fully black
+    scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+
+    // Key light — above and behind camera, illuminates top faces of boxes
+    const key = new THREE.DirectionalLight(0xffffff, 1.1);
+    key.position.set(2, 12, -6);
+    key.castShadow = true;
+    key.shadow.camera.near = 0.5;
+    key.shadow.camera.far  = 60;
+    key.shadow.camera.left = key.shadow.camera.bottom = -20;
+    key.shadow.camera.right = key.shadow.camera.top   =  20;
+    scene.add(key);
+
+    // Cool blue fill from the horizon — gives the track a slight glow
+    const fill = new THREE.DirectionalLight(0x3040ff, 0.25);
+    fill.position.set(0, 3, 50);
+    scene.add(fill);
+
+    // ── Lane surfaces ─────────────────────────────────────────────────
+    for (let i = 0; i < N; i++) {
+      const geo = new THREE.PlaneGeometry(LANE_W, TRACK_LENGTH);
+      const mat = new THREE.MeshStandardMaterial({
+        color: LANES[i].bgColor,
+        roughness: 0.95,
+        metalness: 0.0,
       });
-
-      if (destroyed) { app.destroy(true); return; }
-
-      app.canvas.style.display = 'block';
-      app.canvas.style.width   = '100%';
-      app.canvas.style.height  = '100%';
-      container.appendChild(app.canvas);
-      appRef.current = app;
-
-      ro = new ResizeObserver(() => {
-        const { width: w, height: h } = container.getBoundingClientRect();
-        if (w > 0 && h > 0) app.renderer.resize(w, h);
-      });
-      ro.observe(container);
-
-      app.ticker.add(() => {
-        const now = performance.now();
-        if (playingRef.current) {
-          if (lastTimestampRef.current !== null) {
-            currentTimeRef.current +=
-              ((now - lastTimestampRef.current) / 1000) * playbackRate;
-          }
-          lastTimestampRef.current = now;
-        }
-        render(app, track, currentTimeRef.current, lookaheadSeconds);
-      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(laneX(i), 0, TRACK_LENGTH / 2 - 6);
+      mesh.receiveShadow = true;
+      scene.add(mesh);
     }
 
-    init();
+    // Lane dividers — thin boxes standing just above the surface
+    for (let i = 0; i <= N; i++) {
+      const x = -TOTAL_W / 2 + i * (LANE_W + LANE_GAP) - LANE_GAP / 2;
+      const geo = new THREE.BoxGeometry(LANE_GAP * 0.5, 0.01, TRACK_LENGTH);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x2a2a40 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(x, 0.005, TRACK_LENGTH / 2 - 6);
+      scene.add(mesh);
+    }
+
+    // ── Hit zone bar ──────────────────────────────────────────────────
+    const hitBarGeo = new THREE.BoxGeometry(TOTAL_W + 0.3, 0.03, 0.06);
+    const hitBarMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75 });
+    const hitBar = new THREE.Mesh(hitBarGeo, hitBarMat);
+    hitBar.position.set(0, 0.015, 0);
+    scene.add(hitBar);
+
+    // Soft glow behind the hit zone using a wide, very transparent plane
+    const glowGeo = new THREE.PlaneGeometry(TOTAL_W + 0.5, 0.6);
+    const glowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.06, side: THREE.DoubleSide });
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    glow.rotation.x = -Math.PI / 2;
+    glow.position.set(0, 0.01, 0);
+    scene.add(glow);
+
+    // ── Note meshes ───────────────────────────────────────────────────
+    // One mesh per note, repositioned each frame — straightforward for track sizes
+    type NoteMesh = { mesh: THREE.Mesh; note: (typeof track.notes)[0] };
+    const noteMeshes: NoteMesh[] = [];
+
+    for (const note of track.notes) {
+      const laneIdx = LANE_INDEX[note.lane];
+      if (laneIdx === undefined) continue;
+
+      const lane   = LANES[laneIdx];
+      const color  = new THREE.Color(lane.color);
+      // Emissive intensity encodes velocity so louder notes glow brighter
+      const emissiveIntensity = 0.1 + (note.velocity / 127) * 0.25;
+
+      const geo = new THREE.BoxGeometry(LANE_W - 0.12, NOTE_H, NOTE_DEPTH);
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        emissive: color,
+        emissiveIntensity,
+        roughness: 0.35,
+        metalness: 0.15,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow    = true;
+      mesh.receiveShadow = false;
+      mesh.position.set(laneX(laneIdx), NOTE_H / 2, 9999); // offscreen initially
+      mesh.visible = false;
+      scene.add(mesh);
+      noteMeshes.push({ mesh, note });
+    }
+
+    // ── Resize handling ───────────────────────────────────────────────
+    const ro = new ResizeObserver(() => {
+      const { width: w, height: h } = container.getBoundingClientRect();
+      if (w > 0 && h > 0) {
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+      }
+    });
+    ro.observe(container);
+
+    // ── Animation loop ────────────────────────────────────────────────
+    let animId: number;
+    let destroyed = false;
+
+    function animate() {
+      if (destroyed) return;
+      animId = requestAnimationFrame(animate);
+
+      const now = performance.now();
+      if (playingRef.current) {
+        if (lastTimestampRef.current !== null) {
+          currentTimeRef.current +=
+            ((now - lastTimestampRef.current) / 1000) * playbackRateRef.current;
+        }
+        lastTimestampRef.current = now;
+      }
+
+      const ct = currentTimeRef.current;
+
+      for (const { mesh, note } of noteMeshes) {
+        const t = note.time - ct; // seconds until this note hits the zone
+        if (t < -0.3 || t > lookaheadSeconds + 0.3) {
+          mesh.visible = false;
+          continue;
+        }
+        mesh.visible = true;
+        // Positive Z = ahead of hit zone (upcoming), negative = behind (past)
+        mesh.position.z = t * UNITS_PER_SEC + NOTE_DEPTH / 2;
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
 
     return () => {
       destroyed = true;
-      ro?.disconnect();
-      if (appRef.current) { appRef.current.destroy(true); appRef.current = null; }
+      cancelAnimationFrame(animId);
+      ro.disconnect();
+      renderer.dispose();
+      if (container.contains(renderer.domElement)) {
+        container.removeChild(renderer.domElement);
+      }
       currentTimeRef.current   = 0;
       lastTimestampRef.current = null;
     };
@@ -135,137 +232,4 @@ export default function DrumHighway3D({
   return (
     <div ref={containerRef} className="w-full h-full" style={{ minHeight: 400 }} />
   );
-}
-
-function render(app: Application, track: DrumTrack, currentTime: number, lookaheadSeconds: number) {
-  app.stage.removeChildren();
-
-  const W = app.screen.width;
-  const H = app.screen.height;
-  const g = new Graphics();
-  app.stage.addChild(g);
-
-  const hitY   = H * HIT_Y;
-  const horizY = H * HORIZON_Y;
-
-  // Vanishing point — where all lanes converge (very large t → factor ≈ 0)
-  const vp = { x: W / 2, y: horizY };
-
-  // --- Sky ---
-  g.rect(0, 0, W, horizY).fill({ color: 0x05050a });
-
-  // --- Lane surfaces (triangle from vanishing point to hit-zone edge) ---
-  for (let i = 0; i < N; i++) {
-    const lN = -0.5 + i / N;
-    const rN = -0.5 + (i + 1) / N;
-    const bl = project(lN, 0, lookaheadSeconds, W, H);
-    const br = project(rN, 0, lookaheadSeconds, W, H);
-    const shade = i % 2 === 0 ? 0x0d0d18 : 0x0a0a14;
-    g.poly([vp.x, vp.y, vp.x, vp.y, br.x, br.y, bl.x, bl.y]).fill({ color: shade });
-  }
-
-  // --- Lane dividers ---
-  for (let i = 0; i <= N; i++) {
-    const norm = -0.5 + i / N;
-    const bot  = project(norm, 0, lookaheadSeconds, W, H);
-    g.moveTo(vp.x, vp.y).lineTo(bot.x, bot.y)
-     .stroke({ color: 0x2a2a40, width: 1, alpha: 0.8 });
-  }
-
-  // --- Horizon glow ---
-  for (let i = 8; i >= 0; i--) {
-    g.rect(0, horizY - i, W, 2).fill({ color: 0x6060ff, alpha: (1 - i / 8) * 0.12 });
-  }
-
-  // --- Hit zone bar + glow ---
-  const hitL = project(-0.5, 0, lookaheadSeconds, W, H);
-  const hitR = project( 0.5, 0, lookaheadSeconds, W, H);
-  const barW = hitR.x - hitL.x;
-  for (let i = 10; i >= 0; i--) {
-    g.rect(hitL.x, hitY - i * 3, barW, 6).fill({ color: 0xffffff, alpha: (1 - i / 10) * 0.15 });
-  }
-  g.rect(hitL.x, hitY - 2, barW, 4).fill({ color: 0xffffff, alpha: 0.7 });
-
-  // --- Footer below hit zone ---
-  g.rect(0, hitY + 2, W, H - hitY - 2).fill({ color: 0x05050a });
-
-  // --- Lane labels ---
-  for (let i = 0; i < N; i++) {
-    const pos   = project(-0.5 + (i + 0.5) / N, 0, lookaheadSeconds, W, H);
-    const laneW = project(-0.5 + (i + 1) / N, 0, lookaheadSeconds, W, H).x
-                - project(-0.5 + i / N,        0, lookaheadSeconds, W, H).x;
-    const label = new Text({
-      text: LANES[i].label,
-      style: new TextStyle({ fill: 0x666680, fontSize: Math.min(13, laneW * 0.18), fontFamily: 'monospace' }),
-    });
-    label.anchor.set(0.5, 0);
-    label.x = pos.x;
-    label.y = hitY + 8;
-    app.stage.addChild(label);
-  }
-
-  // --- Notes: 3D boxes lying on the track, drawn far-to-near ---
-  const visible = track.notes
-    .filter(n => {
-      const t = n.time - currentTime;
-      return t + NOTE_DEPTH_SEC >= 0 && t <= lookaheadSeconds;
-    })
-    .sort((a, b) => b.time - a.time); // painter's order: far first
-
-  for (const note of visible) {
-    const laneIdx = LANE_INDEX[note.lane];
-    if (laneIdx === undefined) continue;
-
-    const tFront = note.time - currentTime;
-    const tBack  = tFront + NOTE_DEPTH_SEC;
-
-    const lN = -0.5 + laneIdx / N;
-    const rN = -0.5 + (laneIdx + 1) / N;
-
-    // Four corners of the top face
-    const fl = project(lN, tFront, lookaheadSeconds, W, H);
-    const fr = project(rN, tFront, lookaheadSeconds, W, H);
-    const bl = project(lN, tBack,  lookaheadSeconds, W, H);
-    const br = project(rN, tBack,  lookaheadSeconds, W, H);
-
-    const lane  = LANES[laneIdx];
-    const alpha = 0.75 + (note.velocity / 127) * 0.25;
-    // Depth fog: notes beyond the lookahead window fade out slightly
-    const fog   = tFront > lookaheadSeconds * 0.85
-      ? lerp(1, 0.4, (tFront - lookaheadSeconds * 0.85) / (lookaheadSeconds * 0.15))
-      : 1;
-
-    const inset = (fr.x - fl.x) * 0.05;
-
-    // Top face
-    g.poly([
-      bl.x + inset, bl.y,
-      br.x - inset, br.y,
-      fr.x - inset, fr.y,
-      fl.x + inset, fl.y,
-    ]).fill({ color: lane.color, alpha: alpha * fog });
-
-    // Highlight stripe along the length of the top face
-    g.poly([
-      lerp(bl.x + inset, br.x - inset, 0.15), bl.y,
-      lerp(bl.x + inset, br.x - inset, 0.35), br.y,
-      lerp(fl.x + inset, fr.x - inset, 0.35), fr.y,
-      lerp(fl.x + inset, fr.x - inset, 0.15), fl.y,
-    ]).fill({ color: 0xffffff, alpha: 0.18 * fog * fl.scale });
-
-    // Front face (only when near edge is within the visible highway)
-    if (tFront <= lookaheadSeconds && tFront >= -NOTE_DEPTH_SEC) {
-      const faceH = BOX_FACE_H * fl.scale;
-      g.poly([
-        fl.x + inset, fl.y,
-        fr.x - inset, fr.y,
-        fr.x - inset, fr.y + faceH,
-        fl.x + inset, fl.y + faceH,
-      ]).fill({ color: darken(lane.color, 0.45), alpha: alpha * fog });
-
-      g.moveTo(fl.x + inset, fl.y + faceH)
-       .lineTo(fr.x - inset, fr.y + faceH)
-       .stroke({ color: darken(lane.color, 0.25), width: 1, alpha: fog * 0.9 });
-    }
-  }
 }
