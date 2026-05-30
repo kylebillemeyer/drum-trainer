@@ -7,8 +7,8 @@ import { LANES, LANE_INDEX } from '@/lib/lanes';
 
 interface Props {
   track: DrumTrack;
-  playing: boolean;
-  playbackRate?: number;
+  getCurrentTime: () => number;
+  playedUpTo: number;
   lookaheadSeconds?: number;
 }
 
@@ -17,20 +17,22 @@ const LANE_GAP = 1;
 
 export default function DrumHighway({
   track,
-  playing,
-  playbackRate = 1,
+  getCurrentTime,
+  playedUpTo,
   lookaheadSeconds = 3,
 }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const appRef = useRef<Application | null>(null);
-  const playingRef = useRef(playing);
-  const currentTimeRef = useRef(0);
-  const lastTimestampRef = useRef<number | null>(null);
+  const containerRef  = useRef<HTMLDivElement>(null);
+  const appRef        = useRef<Application | null>(null);
+  const getCurrentTimeRef = useRef(getCurrentTime);
+  const playedUpToRef = useRef(playedUpTo);
 
   useEffect(() => {
-    playingRef.current = playing;
-    if (!playing) lastTimestampRef.current = null;
-  }, [playing]);
+    getCurrentTimeRef.current = getCurrentTime;
+  }, [getCurrentTime]);
+
+  useEffect(() => {
+    playedUpToRef.current = playedUpTo;
+  }, [playedUpTo]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -71,15 +73,7 @@ export default function DrumHighway({
       ro.observe(container);
 
       app.ticker.add(() => {
-        const now = performance.now();
-        if (playingRef.current) {
-          if (lastTimestampRef.current !== null) {
-            currentTimeRef.current +=
-              ((now - lastTimestampRef.current) / 1000) * playbackRate;
-          }
-          lastTimestampRef.current = now;
-        }
-        render(app, track, currentTimeRef.current, lookaheadSeconds);
+        render(app, track, getCurrentTimeRef.current(), lookaheadSeconds, playedUpToRef.current);
       });
     }
 
@@ -92,8 +86,6 @@ export default function DrumHighway({
         appRef.current.destroy(true);
         appRef.current = null;
       }
-      currentTimeRef.current = 0;
-      lastTimestampRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track]);
@@ -108,6 +100,7 @@ function render(
   track: DrumTrack,
   currentTime: number,
   lookaheadSeconds: number,
+  playedUpTo: number,
 ) {
   app.stage.removeChildren();
 
@@ -158,9 +151,10 @@ function render(
     const gemW = Math.max(8, laneH * 0.55);
     const gemH = laneH * 0.7;
 
+    const isPast = note.time < playedUpTo;
     g.roundRect(x - gemW / 2, y + (laneH - gemH) / 2, gemW, gemH, 4).fill({
       color: lane.color,
-      alpha: 0.6 + (note.velocity / 127) * 0.4,
+      alpha: isPast ? 0.15 : 0.6 + (note.velocity / 127) * 0.4,
     });
   }
 }

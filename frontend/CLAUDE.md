@@ -13,7 +13,9 @@ Next.js 16 app (App Router, TypeScript, Tailwind). The UI for the drum trainer.
 | 3D highway | Three.js — real `PerspectiveCamera`, `BoxGeometry`, `MeshStandardMaterial` |
 | Flat highway | PixiJS v8 — 2D WebGL canvas |
 | MIDI input | Web MIDI API (`navigator.requestMIDIAccess`) — not yet wired up |
-| Audio | Web Audio API (`AudioContext`) — not yet wired up |
+| Playback clock | `Transport` class (`src/lib/transport.ts`) — `AudioContext`-based, shared by both highways and the metronome |
+| Metronome | `Metronome` class (`src/lib/metronome.ts`) — Web Audio lookahead scheduler, beat-aligned clicks |
+| Audio backing | Web Audio API — not yet wired up (#6) |
 
 ## Source layout
 
@@ -28,7 +30,11 @@ src/
 │   └── DrumHighway3D/    # primary 3D Three.js highway
 ├── lib/
 │   ├── lanes.ts          # lane config: ID, label, color, order
-│   └── testTrack.ts      # hardcoded test beat — replace with MIDI import (#10)
+│   ├── testTrack.ts      # hardcoded test beat — replace with MIDI import (#10)
+│   ├── transport.ts      # Transport class — AudioContext clock shared by highways + metronome
+│   ├── useTransport.ts   # React hook wrapping Transport
+│   ├── metronome.ts      # Metronome class — Web Audio lookahead beat scheduler
+│   └── useMetronome.ts   # React hook — starts/stops metronome with transport
 └── types/
     └── music.ts          # DrumNote, DrumTrack, LaneId, NoteZone
 ```

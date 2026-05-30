@@ -27,3 +27,12 @@ html, body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@keyframes beat-pop {
+  0%   { opacity: 0.55; transform: scale(1.2); }
+  100% { opacity: 0.18; transform: scale(1); }
+}
+
+.beat-pop {
+  animation: beat-pop 0.45s ease-out forwards;
+}
