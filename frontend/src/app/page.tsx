@@ -20,7 +20,9 @@ const DrumHighway3D = dynamic(
 
 type ViewMode = 'flat' | '3d';
 
-const TEMPO_STEPS = [0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 1.0];
+const TEMPO_MIN  = 0.30;
+const TEMPO_MAX  = 2.00;
+const TEMPO_STEP = 0.05;
 
 export default function Home() {
   const [view, setView]                 = useState<ViewMode>('3d');
@@ -28,6 +30,8 @@ export default function Home() {
   const [showLabels, setShowLabels]     = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [metronome, setMetronome]       = useState(false);
+  const [countInBars, setCountInBars]   = useState(1);    // bars of clicks before track starts
+  const [preDelaySecs, setPreDelaySecs] = useState(1);    // silence (s) before count-in begins
   const [preparing, setPreparing]       = useState(false); // true during pre-delay + count-in
   const [countBeat, setCountBeat]       = useState<number | null>(null);
   const [playedUpTo, setPlayedUpTo]     = useState(0); // furthest track position previously played
@@ -46,7 +50,7 @@ export default function Home() {
       cancelAnimationFrame(rewindRafRef.current);
       rewindRafRef.current = null;
     }
-    const countInDur = track.timeSignature[0] * (60 / track.bpm);
+    const countInDur = countInBars * track.timeSignature[0] * (60 / track.bpm);
     resumeAtRef.current = 0;
     setPlayedUpTo(0);
     transport.seek(-countInDur);
@@ -78,9 +82,9 @@ export default function Home() {
     }
 
     let rafId: number;
-    const beatDur     = 60 / track.bpm;
-    const countInDur  = track.timeSignature[0] * beatDur;
-    const resumeAt    = resumeAtRef.current;
+    const beatDur      = 60 / track.bpm;
+    const countInDur   = countInBars * track.timeSignature[0] * beatDur;
+    const resumeAt     = resumeAtRef.current;
     const countInStart = resumeAt - countInDur;
 
     const poll = () => {
@@ -99,7 +103,7 @@ export default function Home() {
 
     rafId = requestAnimationFrame(poll);
     return () => cancelAnimationFrame(rafId);
-  }, [countingIn, getCurrentTime, track]);
+  }, [countingIn, countInBars, getCurrentTime, track]);
 
   async function handlePlayPause() {
     if (preparing || playing) {
@@ -111,7 +115,7 @@ export default function Home() {
 
       const beatDur    = 60 / track.bpm;
       const barDur     = track.timeSignature[0] * beatDur;
-      const countInDur = barDur;
+      const countInDur = countInBars * barDur;
       // Align to the nearest past bar boundary so the count-in always starts on beat 1.
       // A beat-only floor would land mid-bar and give a non-zero beat index.
       // Max with 0 handles stop during the count-in itself.
@@ -125,15 +129,15 @@ export default function Home() {
     setPreparing(true);
     pendingPlayRef.current = true;
 
-    // 1-second pre-delay before count-in begins
-    await new Promise<void>(r => setTimeout(r, 1000));
+    // Pre-delay before count-in begins
+    await new Promise<void>(r => setTimeout(r, preDelaySecs * 1000));
     if (!pendingPlayRef.current) return;
 
-    // If the rewind is still running (user pressed play < 800ms after stop), snap to target
+    // If the rewind is still running (user pressed play before it finished), snap to target
     if (rewindRafRef.current !== null) {
       cancelAnimationFrame(rewindRafRef.current);
       rewindRafRef.current = null;
-      transport.seek(resumeAtRef.current - track.timeSignature[0] * (60 / track.bpm));
+      transport.seek(resumeAtRef.current - countInBars * track.timeSignature[0] * (60 / track.bpm));
     }
 
     await play();
@@ -275,11 +279,8 @@ export default function Home() {
                 <span className="text-sm text-neutral-300">Tempo</span>
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => {
-                      const idx = TEMPO_STEPS.indexOf(rate);
-                      if (idx > 0) setRate(TEMPO_STEPS[idx - 1]);
-                    }}
-                    disabled={rate <= TEMPO_STEPS[0]}
+                    onClick={() => setRate(Math.max(TEMPO_MIN, parseFloat((rate - TEMPO_STEP).toFixed(2))))}
+                    disabled={rate <= TEMPO_MIN}
                     className="w-6 h-6 flex items-center justify-center rounded bg-neutral-800 text-neutral-400 hover:bg-neutral-700 disabled:opacity-30 text-sm"
                   >
                     −
@@ -288,11 +289,56 @@ export default function Home() {
                     {Math.round(rate * 100)}%
                   </span>
                   <button
-                    onClick={() => {
-                      const idx = TEMPO_STEPS.indexOf(rate);
-                      if (idx < TEMPO_STEPS.length - 1) setRate(TEMPO_STEPS[idx + 1]);
-                    }}
-                    disabled={rate >= TEMPO_STEPS[TEMPO_STEPS.length - 1]}
+                    onClick={() => setRate(Math.min(TEMPO_MAX, parseFloat((rate + TEMPO_STEP).toFixed(2))))}
+                    disabled={rate >= TEMPO_MAX}
+                    className="w-6 h-6 flex items-center justify-center rounded bg-neutral-800 text-neutral-400 hover:bg-neutral-700 disabled:opacity-30 text-sm"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Count-in bars */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm text-neutral-300">Count-in</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setCountInBars(b => Math.max(1, b - 1))}
+                    disabled={countInBars <= 1}
+                    className="w-6 h-6 flex items-center justify-center rounded bg-neutral-800 text-neutral-400 hover:bg-neutral-700 disabled:opacity-30 text-sm"
+                  >
+                    −
+                  </button>
+                  <span className="text-xs font-mono text-neutral-300 w-10 text-center">
+                    {countInBars} {countInBars === 1 ? 'bar' : 'bars'}
+                  </span>
+                  <button
+                    onClick={() => setCountInBars(b => Math.min(4, b + 1))}
+                    disabled={countInBars >= 4}
+                    className="w-6 h-6 flex items-center justify-center rounded bg-neutral-800 text-neutral-400 hover:bg-neutral-700 disabled:opacity-30 text-sm"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Pre-delay */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm text-neutral-300">Pre-delay</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setPreDelaySecs(s => Math.max(0, s - 1))}
+                    disabled={preDelaySecs <= 0}
+                    className="w-6 h-6 flex items-center justify-center rounded bg-neutral-800 text-neutral-400 hover:bg-neutral-700 disabled:opacity-30 text-sm"
+                  >
+                    −
+                  </button>
+                  <span className="text-xs font-mono text-neutral-300 w-10 text-center">
+                    {preDelaySecs}s
+                  </span>
+                  <button
+                    onClick={() => setPreDelaySecs(s => Math.min(3, s + 1))}
+                    disabled={preDelaySecs >= 3}
                     className="w-6 h-6 flex items-center justify-center rounded bg-neutral-800 text-neutral-400 hover:bg-neutral-700 disabled:opacity-30 text-sm"
                   >
                     +
