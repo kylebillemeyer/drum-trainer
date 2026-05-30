@@ -9,12 +9,16 @@ Design decisions and rationale: `docs/vision.md`.
 ```
 drum-trainer/
 ├── frontend/      # Next.js app — see frontend/CLAUDE.md
-├── docs/          # vision.md, future ADRs
+├── docs/          # vision.md, TD-27 reference manual, future ADRs
 ├── SPEC.md        # product specification
 └── HANDOFF.md     # session handoff (regenerate with /handoff)
 ```
 
 Future siblings (`backend/`, `utils/`) may be added alongside `frontend/`.
+
+## Hardware reference
+
+The TD-27 reference manual is at `docs/TD-27_Reference_eng02_W.pdf`. Consult it for MIDI note mappings, pad/cymbal assignments, CC numbers, and kit configuration details.
 
 ## Key constraints
 

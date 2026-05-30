@@ -7,9 +7,9 @@ import { LANES, LANE_INDEX } from '@/lib/lanes';
 
 interface Props {
   track: DrumTrack;
-  playing: boolean;
+  getCurrentTime: () => number;
+  playedUpTo: number;
   showLabels?: boolean;
-  playbackRate?: number;
   lookaheadSeconds?: number;
 }
 
@@ -37,27 +37,24 @@ function laneColorCss(color: number) {
 
 export default function DrumHighway3D({
   track,
-  playing,
+  getCurrentTime,
+  playedUpTo,
   showLabels = false,
-  playbackRate = 1,
   lookaheadSeconds = 3,
 }: Props) {
-  const containerRef     = useRef<HTMLDivElement>(null);
-  const playingRef       = useRef(playing);
-  const playbackRateRef  = useRef(playbackRate);
-  const currentTimeRef   = useRef(0);
-  const lastTimestampRef = useRef<number | null>(null);
+  const containerRef      = useRef<HTMLDivElement>(null);
+  const getCurrentTimeRef = useRef(getCurrentTime);
+  const playedUpToRef     = useRef(playedUpTo);
 
   const [labelXs, setLabelXs] = useState<number[] | null>(null);
 
   useEffect(() => {
-    playingRef.current = playing;
-    if (!playing) lastTimestampRef.current = null;
-  }, [playing]);
+    getCurrentTimeRef.current = getCurrentTime;
+  }, [getCurrentTime]);
 
   useEffect(() => {
-    playbackRateRef.current = playbackRate;
-  }, [playbackRate]);
+    playedUpToRef.current = playedUpTo;
+  }, [playedUpTo]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -142,7 +139,7 @@ export default function DrumHighway3D({
     scene.add(glow);
 
     // ── Note meshes ───────────────────────────────────────────────────
-    type NoteMesh = { mesh: THREE.Mesh; note: (typeof track.notes)[0] };
+    type NoteMesh = { mesh: THREE.Mesh; mat: THREE.MeshStandardMaterial; note: (typeof track.notes)[0] };
     const noteMeshes: NoteMesh[] = [];
 
     for (const note of track.notes) {
@@ -154,13 +151,13 @@ export default function DrumHighway3D({
       const emissiveIntensity = 0.1 + (note.velocity / 127) * 0.25;
 
       const geo = new THREE.BoxGeometry(LANE_W - 0.12, NOTE_H, NOTE_DEPTH);
-      const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity, roughness: 0.35, metalness: 0.15 });
+      const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity, roughness: 0.35, metalness: 0.15, transparent: true });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = true;
       mesh.position.set(laneX(laneIdx), NOTE_H / 2, 9999);
       mesh.visible = false;
       scene.add(mesh);
-      noteMeshes.push({ mesh, note });
+      noteMeshes.push({ mesh, mat, note });
     }
 
     // ── Label X positions ─────────────────────────────────────────────
@@ -210,21 +207,13 @@ export default function DrumHighway3D({
       if (destroyed) return;
       animId = requestAnimationFrame(animate);
 
-      const now = performance.now();
-      if (playingRef.current) {
-        if (lastTimestampRef.current !== null) {
-          currentTimeRef.current +=
-            ((now - lastTimestampRef.current) / 1000) * playbackRateRef.current;
-        }
-        lastTimestampRef.current = now;
-      }
-
-      const ct = currentTimeRef.current;
-      for (const { mesh, note } of noteMeshes) {
+      const ct = getCurrentTimeRef.current();
+      for (const { mesh, mat, note } of noteMeshes) {
         const t = note.time - ct;
         if (t < -0.3 || t > lookaheadSeconds + 0.3) { mesh.visible = false; continue; }
         mesh.visible = true;
         mesh.position.z = t * UNITS_PER_SEC + NOTE_DEPTH / 2;
+        mat.opacity = note.time < playedUpToRef.current ? 0.15 : 1.0;
       }
 
       renderer.render(scene, camera);
@@ -238,8 +227,6 @@ export default function DrumHighway3D({
       ro.disconnect();
       renderer.dispose();
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
-      currentTimeRef.current   = 0;
-      lastTimestampRef.current = null;
       setLabelXs(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
