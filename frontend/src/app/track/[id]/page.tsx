@@ -13,6 +13,9 @@ import { AuthGate } from '@/components/AuthGate';
 import { useAuth } from '@/context/AuthContext';
 import { SettingsProvider, useSettings } from '@/lib/SettingsContext';
 import SettingsPanel from '@/components/SettingsPanel/SettingsPanel';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 
 const DrumHighway = dynamic(
   () => import('@/components/DrumHighway/DrumHighway'),
@@ -33,10 +36,9 @@ function TrackPageContent() {
   const [loading, setLoading]     = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [showSettings, setShowSettings] = useState(false);
-  const [preparing, setPreparing]       = useState(false);
-  const [countBeat, setCountBeat]       = useState<number | null>(null);
-  const [playedUpTo, setPlayedUpTo]     = useState(0);
+  const [preparing, setPreparing]   = useState(false);
+  const [countBeat, setCountBeat]   = useState<number | null>(null);
+  const [playedUpTo, setPlayedUpTo] = useState(0);
   const pendingPlayRef = useRef(false);
   const resumeAtRef    = useRef(0);
   const rewindRafRef   = useRef<number | null>(null);
@@ -176,20 +178,26 @@ function TrackPageContent() {
 
           {!loading && !loadError && (
             <>
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={handlePlayPause}
-                className="px-4 py-1.5 text-sm font-mono rounded bg-neutral-800 hover:bg-neutral-700 transition-colors"
+                className="font-mono"
               >
                 {preparing || playing ? 'Stop' : 'Play'}
-              </button>
+              </Button>
 
-              <button
-                onClick={() => setShowSettings(s => !s)}
-                className={`h-8 w-8 flex items-center justify-center rounded border transition-colors ${showSettings ? 'border-neutral-500 bg-neutral-700 text-white' : 'border-neutral-700 bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}`}
-                aria-label="Settings"
-              >
-                <span className="text-xl leading-none">⚙</span>
-              </button>
+              <Popover>
+                <PopoverTrigger
+                  className={cn(buttonVariants({ variant: 'outline', size: 'icon-sm' }))}
+                  aria-label="Settings"
+                >
+                  <span className="text-base leading-none">⚙</span>
+                </PopoverTrigger>
+                <PopoverContent side="bottom" align="end" className="w-56 p-0">
+                  <SettingsPanel rate={rate} setRate={setRate} />
+                </PopoverContent>
+              </Popover>
             </>
           )}
 
@@ -202,14 +210,6 @@ function TrackPageContent() {
           </button>
         </div>
       </div>
-
-      {/* ── Settings panel ── */}
-      <SettingsPanel
-        open={showSettings}
-        onClose={() => setShowSettings(false)}
-        rate={rate}
-        setRate={setRate}
-      />
 
       {/* ── Count-in overlay ── */}
       {countBeat !== null && (
