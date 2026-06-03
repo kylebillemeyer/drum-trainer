@@ -7,8 +7,9 @@ import { parseMidi } from '@/lib/midiImport';
 import { useTransport } from '@/lib/useTransport';
 import { useMetronome } from '@/lib/useMetronome';
 import { DrumTrack } from '@/types/music';
+import Link from 'next/link';
+import { AuthGate } from '@/components/AuthGate';
 import { useAuth } from '@/context/AuthContext';
-import SignIn from '@/components/SignIn/SignIn';
 
 const DrumHighway = dynamic(
   () => import('@/components/DrumHighway/DrumHighway'),
@@ -26,8 +27,8 @@ const TEMPO_MIN  = 0.30;
 const TEMPO_MAX  = 2.00;
 const TEMPO_STEP = 0.05;
 
-export default function Home() {
-  const { user, loading, signOut } = useAuth();
+function HomeContent() {
+  const { signOut, user } = useAuth();
 
   const [view, setView]                 = useState<ViewMode>('3d');
   const [track, setTrack]               = useState<DrumTrack>(TEST_TRACK);
@@ -171,16 +172,6 @@ export default function Home() {
     e.target.value = '';
   }
 
-  if (loading) {
-    return (
-      <main className="flex items-center justify-center h-screen bg-neutral-950 text-white">
-        <span className="text-xs font-mono text-neutral-500 tracking-widest uppercase">Loading…</span>
-      </main>
-    );
-  }
-
-  if (!user) return <SignIn />;
-
   return (
     <main className="flex flex-col h-screen bg-neutral-950 text-white">
 
@@ -196,6 +187,13 @@ export default function Home() {
         </span>
 
         <div className="ml-auto flex items-center gap-2">
+          <Link
+            href="/upload"
+            className="px-3 py-1.5 text-xs font-mono rounded border border-neutral-700 bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
+          >
+            Upload
+          </Link>
+
           <button
             onClick={handleImportClick}
             className="px-3 py-1.5 text-xs font-mono rounded border border-neutral-700 bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
@@ -227,7 +225,8 @@ export default function Home() {
 
           <button
             onClick={signOut}
-            className="px-3 py-1.5 text-xs font-mono rounded border border-neutral-700 bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
+            className="px-3 py-1.5 text-xs font-mono rounded border border-neutral-700 bg-neutral-900 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
+            title={user?.email ?? 'Sign out'}
           >
             Sign out
           </button>
@@ -399,5 +398,13 @@ export default function Home() {
         }
       </div>
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <AuthGate>
+      <HomeContent />
+    </AuthGate>
   );
 }
