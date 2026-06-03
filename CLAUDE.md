@@ -69,6 +69,36 @@ Plain description of the feature or bug.
 
 The human will reply in the comment thread. The next agent session will read the reply and continue.
 
+## PR and branching workflow
+
+**Branch from the dependency, not from main.**
+
+If an issue says `Blocked by #X`, the feature branch must be created from the dependency's feature branch — not from `main`:
+
+```bash
+# Wrong — creates a branch that duplicates the dependency's work:
+git checkout main
+git checkout -b feat/issue-N
+
+# Right — inherits the dependency's changes:
+git checkout feat/issue-X
+git checkout -b feat/issue-N
+```
+
+A PR diff should only show the work done for that issue. If the diff contains files already changed in a dependency PR, the branch was created from the wrong base.
+
+**After a dependency merges into main**, rebase the next branch in the chain before it is reviewed or merged:
+
+```bash
+git fetch origin
+git rebase origin/main feat/issue-N
+git push --force-with-lease origin feat/issue-N
+```
+
+This drops the dependency's commits (now in main) and produces a clean diff showing only the current issue's changes.
+
+**Never retroactively set a PR base to a dependency branch** as a substitute for proper branching. Changing the base changes what GitHub shows in the diff, but if the branch was not actually created from that base the merge-base will be wrong and the diff will be polluted.
+
 ## Development
 
 ```bash
