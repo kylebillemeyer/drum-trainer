@@ -13,8 +13,11 @@ import {
   ShadowGenerator,
   MeshBuilder,
   StandardMaterial,
+  PBRMaterial,
+  Mesh,
+  InstancedMesh,
 } from '@babylonjs/core';
-import { DrumTrack } from '@/types/music';
+import { DrumNote, DrumTrack, LaneId } from '@/types/music';
 import { LANES } from '@/lib/lanes';
 import { useSettings } from '@/lib/SettingsContext';
 
@@ -33,6 +36,7 @@ const NOTE_H         = 0.20;
 const NOTE_DEPTH_SEC = 0.07;
 const NOTE_DEPTH     = NOTE_DEPTH_SEC * UNITS_PER_SEC;
 const TRACK_LENGTH   = 300;
+const POOL_SIZE      = 64; // per lane per state — covers any realistic note density in a 3s window
 
 const N       = LANES.length;
 const TOTAL_W = N * LANE_W + (N - 1) * LANE_GAP;
@@ -48,6 +52,30 @@ function hexToColor3(hex: number): Color3 {
   return new Color3((hex >> 16 & 0xff) / 255, (hex >> 8 & 0xff) / 255, (hex & 0xff) / 255);
 }
 
+type LanePool = {
+  futureMaster: Mesh;
+  pastMaster:   Mesh;
+  futurePool:   InstancedMesh[];
+  pastPool:     InstancedMesh[];
+};
+
+function* visibleNotesInWindow(
+  notes: DrumNote[],
+  laneId: LaneId,
+  windowStart: number,
+  windowEnd: number,
+): Generator<DrumNote> {
+  let lo = 0, hi = notes.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (notes[mid].time < windowStart) lo = mid + 1;
+    else hi = mid;
+  }
+  for (let i = lo; i < notes.length && notes[i].time <= windowEnd; i++) {
+    if (notes[i].lane === laneId) yield notes[i];
+  }
+}
+
 export default function DrumHighway3D({
   track,
   getCurrentTime,
@@ -55,8 +83,19 @@ export default function DrumHighway3D({
   lookaheadSeconds = 3,
 }: Props) {
   const { showLabels } = useSettings();
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef      = useRef<HTMLDivElement>(null);
+  const getCurrentTimeRef = useRef(getCurrentTime);
+  const playedUpToRef     = useRef(playedUpTo);
+
   const [labelXs, setLabelXs] = useState<number[] | null>(null);
+
+  useEffect(() => {
+    getCurrentTimeRef.current = getCurrentTime;
+  }, [getCurrentTime]);
+
+  useEffect(() => {
+    playedUpToRef.current = playedUpTo;
+  }, [playedUpTo]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -172,6 +211,46 @@ export default function DrumHighway3D({
     glow.material = glowMat;
     glow.position = new Vector3(0, 0.01, 0);
 
+    // ── Note gem pools ─────────────────────────────────────────────────
+    // Two master meshes per lane (future / past); POOL_SIZE instances each.
+    // Masters are invisible — only instances render.
+    const boxOpts = { width: LANE_W - 0.12, height: NOTE_H, depth: NOTE_DEPTH };
+
+    const lanePools: LanePool[] = LANES.map((lane, i) => {
+      const color = hexToColor3(lane.color);
+
+      const futureMat = new PBRMaterial(`lane-future-mat-${i}`, scene);
+      futureMat.albedoColor   = color;
+      futureMat.emissiveColor = color.scale(0.15);
+      futureMat.metallic      = 0.15;
+      futureMat.roughness     = 0.35;
+
+      const pastMat = futureMat.clone(`lane-past-mat-${i}`);
+      pastMat.alpha = 0.15;
+
+      const futureMaster = MeshBuilder.CreateBox(`note-future-master-${i}`, boxOpts, scene);
+      futureMaster.material  = futureMat;
+      futureMaster.isVisible = false;
+
+      const pastMaster = MeshBuilder.CreateBox(`note-past-master-${i}`, boxOpts, scene);
+      pastMaster.material  = pastMat;
+      pastMaster.isVisible = false;
+
+      const futurePool = Array.from({ length: POOL_SIZE }, (_, j) => {
+        const inst = futureMaster.createInstance(`note-future-${i}-${j}`);
+        inst.isVisible = false;
+        return inst;
+      });
+
+      const pastPool = Array.from({ length: POOL_SIZE }, (_, j) => {
+        const inst = pastMaster.createInstance(`note-past-${i}-${j}`);
+        inst.isVisible = false;
+        return inst;
+      });
+
+      return { futureMaster, pastMaster, futurePool, pastPool };
+    });
+
     // ── Label X positions ─────────────────────────────────────────────
     // Vector3.TransformCoordinates applies the VP matrix with perspective divide,
     // yielding NDC coords — same algorithm as Three.js vector.project(camera).
@@ -195,10 +274,42 @@ export default function DrumHighway3D({
         const ndc = Vector3.TransformCoordinates(new Vector3(laneX(i), 0, labelZ), transform);
         return ((ndc.x + 1) / 2) * w;
       }));
+
+      void h; // h reserved for future use (e.g. vertical label placement)
     }
 
     // ── Render loop ───────────────────────────────────────────────────
-    engine.runRenderLoop(() => scene.render());
+    engine.runRenderLoop(() => {
+      const ct          = getCurrentTimeRef.current();
+      const playedUpTo  = playedUpToRef.current;
+      const windowStart = ct - 0.3;
+      const windowEnd   = ct + lookaheadSeconds + 0.3;
+
+      for (let i = 0; i < LANES.length; i++) {
+        const { futurePool, pastPool } = lanePools[i];
+        const lane = LANES[i];
+        let futureIdx = 0;
+        let pastIdx   = 0;
+
+        for (const note of visibleNotesInWindow(track.notes, lane.id, windowStart, windowEnd)) {
+          const z      = (note.time - ct) * UNITS_PER_SEC + NOTE_DEPTH / 2;
+          const isPast = note.time < playedUpTo;
+          const pool   = isPast ? pastPool : futurePool;
+          const idx    = isPast ? pastIdx++ : futureIdx++;
+          if (idx >= POOL_SIZE) continue; // safety guard
+
+          const inst = pool[idx];
+          inst.position.set(laneX(i), NOTE_H / 2, z);
+          inst.isVisible = true;
+        }
+
+        // Hide unused slots
+        for (let j = futureIdx; j < POOL_SIZE; j++) futurePool[j].isVisible = false;
+        for (let j = pastIdx;   j < POOL_SIZE; j++) pastPool[j].isVisible   = false;
+      }
+
+      scene.render();
+    });
 
     if (showLabels) computeLabelXs(W, H);
 
