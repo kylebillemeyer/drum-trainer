@@ -9,7 +9,7 @@ Replace Three.js with Babylon.js in `DrumHighway3D` — engine, camera, lighting
 - [x] Verify coordinate system: negate laneX for Babylon left-handed coord system
 - [x] Port label projection using `Vector3.TransformCoordinates`
 - [x] Run `npx tsc --noEmit` — must pass cleanly
-- [ ] Open PR with Closes #22
+- [x] Open PR with Closes #22
 
 ## Decisions / blockers
 - Babylon.js uses a left-handed coordinate system (X+ = screen right when looking in +Z).
