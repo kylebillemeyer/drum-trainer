@@ -3,12 +3,12 @@ Replace Three.js with Babylon.js in `DrumHighway3D` — engine, camera, lighting
 
 ## Tasks
 - [x] Create AGENT_PLAN.md and commit
-- [ ] Label issue in-progress, remove spec-approved
-- [ ] Remove `three` and `@types/three`; add `@babylonjs/core`
-- [ ] Rewrite `DrumHighway3D.tsx` useEffect body with Babylon.js equivalents
-- [ ] Verify coordinate system: negate laneX for Babylon left-handed coord system
-- [ ] Port label projection using `Vector3.TransformCoordinates`
-- [ ] Run `npx tsc --noEmit` — must pass cleanly
+- [x] Label issue in-progress, remove spec-approved
+- [x] Remove `three` and `@types/three`; add `@babylonjs/core`
+- [x] Rewrite `DrumHighway3D.tsx` useEffect body with Babylon.js equivalents
+- [x] Verify coordinate system: negate laneX for Babylon left-handed coord system
+- [x] Port label projection using `Vector3.TransformCoordinates`
+- [x] Run `npx tsc --noEmit` — must pass cleanly
 - [ ] Open PR with Closes #22
 
 ## Decisions / blockers

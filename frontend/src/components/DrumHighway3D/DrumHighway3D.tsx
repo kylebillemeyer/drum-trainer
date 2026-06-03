@@ -1,9 +1,21 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import * as THREE from 'three';
+import {
+  Engine,
+  Scene,
+  Color3,
+  Color4,
+  Vector3,
+  FreeCamera,
+  HemisphericLight,
+  DirectionalLight,
+  ShadowGenerator,
+  MeshBuilder,
+  StandardMaterial,
+} from '@babylonjs/core';
 import { DrumTrack } from '@/types/music';
-import { LANES, LANE_INDEX } from '@/lib/lanes';
+import { LANES } from '@/lib/lanes';
 import { useSettings } from '@/lib/SettingsContext';
 
 interface Props {
@@ -25,14 +37,15 @@ const TRACK_LENGTH   = 300;
 const N       = LANES.length;
 const TOTAL_W = N * LANE_W + (N - 1) * LANE_GAP;
 
-// Lanes run right-to-left in world X so the camera's mirrored X axis (a consequence
-// of looking in the +Z direction) renders them left-to-right on screen in LANES order.
+// Babylon.js uses a left-handed coordinate system where X+ = screen right when looking
+// in +Z. Three.js (right-handed) mirrors X when looking in +Z, so world +X appeared
+// screen-left there. Negate here to preserve the same left-to-right lane order on screen.
 function laneX(i: number) {
-  return TOTAL_W / 2 - i * (LANE_W + LANE_GAP) - LANE_W / 2;
+  return -(TOTAL_W / 2 - i * (LANE_W + LANE_GAP) - LANE_W / 2);
 }
 
-function laneColorCss(color: number) {
-  return `#${color.toString(16).padStart(6, '0')}`;
+function hexToColor3(hex: number): Color3 {
+  return new Color3((hex >> 16 & 0xff) / 255, (hex >> 8 & 0xff) / 255, (hex & 0xff) / 255);
 }
 
 export default function DrumHighway3D({
@@ -42,19 +55,8 @@ export default function DrumHighway3D({
   lookaheadSeconds = 3,
 }: Props) {
   const { showLabels } = useSettings();
-  const containerRef      = useRef<HTMLDivElement>(null);
-  const getCurrentTimeRef = useRef(getCurrentTime);
-  const playedUpToRef     = useRef(playedUpTo);
-
+  const containerRef = useRef<HTMLDivElement>(null);
   const [labelXs, setLabelXs] = useState<number[] | null>(null);
-
-  useEffect(() => {
-    getCurrentTimeRef.current = getCurrentTime;
-  }, [getCurrentTime]);
-
-  useEffect(() => {
-    playedUpToRef.current = playedUpTo;
-  }, [playedUpTo]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -63,170 +65,159 @@ export default function DrumHighway3D({
     const W = width  || 800;
     const H = height || 500;
 
-    // ── Scene ──────────────────────────────────────────────────────────
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x05050a);
-    scene.fog = new THREE.FogExp2(0x05050a, 0.012);
+    // ── Canvas ────────────────────────────────────────────────────────
+    const canvas = document.createElement('canvas');
+    canvas.style.display  = 'block';
+    canvas.style.width    = '100%';
+    canvas.style.height   = '100%';
+    canvas.style.position = 'absolute';
+    canvas.style.inset    = '0';
+    canvas.style.zIndex   = '0';
+    container.appendChild(canvas);
+
+    // ── Engine & Scene ────────────────────────────────────────────────
+    const engine = new Engine(canvas, true);
+    engine.setSize(W, H);
+    const scene = new Scene(engine);
+    scene.clearColor = new Color4(5 / 255, 5 / 255, 10 / 255, 1); // 0x05050a
+    scene.fogMode    = Scene.FOGMODE_EXP2;
+    scene.fogColor   = new Color3(5 / 255, 5 / 255, 10 / 255);
+    scene.fogDensity = 0.012;
 
     // ── Camera ────────────────────────────────────────────────────────
-    const camera = new THREE.PerspectiveCamera(62, W / H, 0.1, 500);
-    camera.position.set(0, 4.2, -4.5);
-    camera.lookAt(0, 0, 40);
-
-    // ── Renderer ──────────────────────────────────────────────────────
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(W, H);
-    renderer.setPixelRatio(window.devicePixelRatio || 1);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.domElement.style.display  = 'block';
-    renderer.domElement.style.width    = '100%';
-    renderer.domElement.style.height   = '100%';
-    renderer.domElement.style.position = 'absolute';
-    renderer.domElement.style.inset    = '0';
-    renderer.domElement.style.zIndex   = '0';
-    container.appendChild(renderer.domElement);
+    const camera = new FreeCamera('camera', new Vector3(0, 4.2, -4.5), scene);
+    camera.setTarget(new Vector3(0, 0, 40));
+    camera.fov  = 62 * Math.PI / 180;
+    camera.minZ = 0.1;
+    camera.maxZ = 500;
 
     // ── Lighting ──────────────────────────────────────────────────────
-    scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+    // Equivalent of Three.js AmbientLight(0xffffff, 0.35)
+    const ambient = new HemisphericLight('ambient', new Vector3(0, 1, 0), scene);
+    ambient.intensity    = 0.35;
+    ambient.diffuse      = Color3.White();
+    ambient.groundColor  = Color3.White();
+    ambient.specular     = Color3.Black();
 
-    const key = new THREE.DirectionalLight(0xffffff, 1.1);
-    key.position.set(2, 12, -6);
-    key.castShadow = true;
-    key.shadow.camera.near = 0.5;
-    key.shadow.camera.far  = 60;
-    key.shadow.camera.left = key.shadow.camera.bottom = -20;
-    key.shadow.camera.right = key.shadow.camera.top   =  20;
-    scene.add(key);
+    // Key light — position (2, 12, -6); DirectionalLight takes direction (toward scene)
+    const key = new DirectionalLight('key', new Vector3(-2, -12, 6), scene);
+    key.position  = new Vector3(2, 12, -6);
+    key.intensity = 1.1;
 
-    const fill = new THREE.DirectionalLight(0x3040ff, 0.25);
-    fill.position.set(0, 3, 50);
-    scene.add(fill);
+    // Fill light — 0x3040ff at position (0, 3, 50)
+    const fill = new DirectionalLight('fill', new Vector3(0, -3, -50), scene);
+    fill.position  = new Vector3(0, 3, 50);
+    fill.intensity = 0.25;
+    fill.diffuse   = hexToColor3(0x3040ff);
+    fill.specular  = Color3.Black();
+
+    // Shadow generator on key light (PCFSoft equivalent)
+    const shadowGen = new ShadowGenerator(1024, key);
+    shadowGen.usePoissonSampling = true;
+    key.shadowMinZ = 0.5;
+    key.shadowMaxZ = 60;
 
     // ── Lane surfaces ─────────────────────────────────────────────────
     for (let i = 0; i < N; i++) {
-      const geo = new THREE.PlaneGeometry(LANE_W, TRACK_LENGTH);
-      const mat = new THREE.MeshStandardMaterial({ color: LANES[i].bgColor, roughness: 0.95 });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(laneX(i), 0, TRACK_LENGTH / 2 - 6);
-      mesh.receiveShadow = true;
-      scene.add(mesh);
+      const ground = MeshBuilder.CreateGround(`lane_${i}`, {
+        width:  LANE_W,
+        height: TRACK_LENGTH,
+      }, scene);
+      const mat = new StandardMaterial(`laneMat_${i}`, scene);
+      mat.diffuseColor = hexToColor3(LANES[i].bgColor);
+      ground.material       = mat;
+      ground.position       = new Vector3(laneX(i), 0, TRACK_LENGTH / 2 - 6);
+      ground.receiveShadows = true;
     }
 
-    // Lane dividers
+    // ── Lane dividers ─────────────────────────────────────────────────
     for (let i = 0; i <= N; i++) {
-      const x = TOTAL_W / 2 - i * (LANE_W + LANE_GAP) + LANE_GAP / 2;
-      const geo = new THREE.BoxGeometry(LANE_GAP * 0.5, 0.01, TRACK_LENGTH);
-      const mat = new THREE.MeshBasicMaterial({ color: 0x2a2a40 });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(x, 0.005, TRACK_LENGTH / 2 - 6);
-      scene.add(mesh);
+      // Negate X for same reason as laneX()
+      const x = -(TOTAL_W / 2 - i * (LANE_W + LANE_GAP) + LANE_GAP / 2);
+      const divider = MeshBuilder.CreateBox(`divider_${i}`, {
+        width:  LANE_GAP * 0.5,
+        height: 0.01,
+        depth:  TRACK_LENGTH,
+      }, scene);
+      const mat = new StandardMaterial(`divMat_${i}`, scene);
+      mat.emissiveColor = hexToColor3(0x2a2a40);
+      mat.diffuseColor  = Color3.Black();
+      divider.material = mat;
+      divider.position = new Vector3(x, 0.005, TRACK_LENGTH / 2 - 6);
     }
 
     // ── Hit zone bar ──────────────────────────────────────────────────
-    const hitBarGeo = new THREE.BoxGeometry(TOTAL_W + 0.3, 0.03, 0.06);
-    const hitBarMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75 });
-    const hitBar = new THREE.Mesh(hitBarGeo, hitBarMat);
-    hitBar.position.set(0, 0.015, 0);
-    scene.add(hitBar);
+    const hitBar = MeshBuilder.CreateBox('hitBar', {
+      width:  TOTAL_W + 0.3,
+      height: 0.03,
+      depth:  0.06,
+    }, scene);
+    const hitBarMat = new StandardMaterial('hitBarMat', scene);
+    hitBarMat.emissiveColor = Color3.White();
+    hitBarMat.diffuseColor  = Color3.Black();
+    hitBarMat.alpha         = 0.75;
+    hitBar.material = hitBarMat;
+    hitBar.position = new Vector3(0, 0.015, 0);
 
-    const glowGeo = new THREE.PlaneGeometry(TOTAL_W + 0.5, 0.6);
-    const glowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.06, side: THREE.DoubleSide });
-    const glow = new THREE.Mesh(glowGeo, glowMat);
-    glow.rotation.x = -Math.PI / 2;
-    glow.position.set(0, 0.01, 0);
-    scene.add(glow);
-
-    // ── Note meshes ───────────────────────────────────────────────────
-    type NoteMesh = { mesh: THREE.Mesh; mat: THREE.MeshStandardMaterial; note: (typeof track.notes)[0] };
-    const noteMeshes: NoteMesh[] = [];
-
-    for (const note of track.notes) {
-      const laneIdx = LANE_INDEX[note.lane];
-      if (laneIdx === undefined) continue;
-
-      const lane  = LANES[laneIdx];
-      const color = new THREE.Color(lane.color);
-      const emissiveIntensity = 0.1 + (note.velocity / 127) * 0.25;
-
-      const geo = new THREE.BoxGeometry(LANE_W - 0.12, NOTE_H, NOTE_DEPTH);
-      const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity, roughness: 0.35, metalness: 0.15, transparent: true });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.castShadow = true;
-      mesh.position.set(laneX(laneIdx), NOTE_H / 2, 9999);
-      mesh.visible = false;
-      scene.add(mesh);
-      noteMeshes.push({ mesh, mat, note });
-    }
+    // Glow plane beneath hit bar
+    const glow = MeshBuilder.CreateGround('glow', {
+      width:  TOTAL_W + 0.5,
+      height: 0.6,
+    }, scene);
+    const glowMat = new StandardMaterial('glowMat', scene);
+    glowMat.emissiveColor   = Color3.White();
+    glowMat.diffuseColor    = Color3.Black();
+    glowMat.alpha           = 0.06;
+    glowMat.backFaceCulling = false;
+    glow.material = glowMat;
+    glow.position = new Vector3(0, 0.01, 0);
 
     // ── Label X positions ─────────────────────────────────────────────
-    function computeLabelXs(w: number) {
-      // Project lane centers at whichever world Z is visible at the screen bottom.
-      // The hit zone (z=0) is just below the view frustum due to camera angle, so
-      // we binary-search for the Z that lands at NDC y=-1 and project there instead.
-      const probe = new THREE.Vector3(0, 0, 0);
-      probe.project(camera);
+    // Vector3.TransformCoordinates applies the VP matrix with perspective divide,
+    // yielding NDC coords — same algorithm as Three.js vector.project(camera).
+    function computeLabelXs(w: number, h: number) {
+      const transform = scene.getTransformMatrix();
+
+      // Check if hit zone (z=0) is below the screen bottom (NDC y < -1)
+      const probe0 = Vector3.TransformCoordinates(Vector3.Zero(), transform);
       let labelZ = 0;
-      if (probe.y < -1) {
+      if (probe0.y < -1) {
         let lo = 0, hi = 50;
         for (let iter = 0; iter < 30; iter++) {
           const mid = (lo + hi) / 2;
-          probe.set(0, 0, mid);
-          probe.project(camera);
-          if (probe.y < -1) lo = mid; else hi = mid;
+          const p = Vector3.TransformCoordinates(new Vector3(0, 0, mid), transform);
+          if (p.y < -1) lo = mid; else hi = mid;
         }
         labelZ = (lo + hi) / 2;
       }
+
       setLabelXs(LANES.map((_, i) => {
-        const v = new THREE.Vector3(laneX(i), 0, labelZ);
-        v.project(camera);
-        return ((v.x + 1) / 2) * w;
+        const ndc = Vector3.TransformCoordinates(new Vector3(laneX(i), 0, labelZ), transform);
+        return ((ndc.x + 1) / 2) * w;
       }));
     }
 
-    if (showLabels) computeLabelXs(W);
+    // ── Render loop ───────────────────────────────────────────────────
+    engine.runRenderLoop(() => scene.render());
+
+    if (showLabels) computeLabelXs(W, H);
 
     // ── Resize ────────────────────────────────────────────────────────
     const ro = new ResizeObserver(() => {
       const { width: w, height: h } = container.getBoundingClientRect();
       if (w > 0 && h > 0) {
-        camera.aspect = w / h;
-        camera.updateProjectionMatrix();
-        renderer.setSize(w, h);
-        if (showLabels) computeLabelXs(w);
+        engine.resize();
+        if (showLabels) computeLabelXs(w, h);
       }
     });
     ro.observe(container);
 
-    // ── Animation loop ────────────────────────────────────────────────
-    let animId: number;
-    let destroyed = false;
-
-    function animate() {
-      if (destroyed) return;
-      animId = requestAnimationFrame(animate);
-
-      const ct = getCurrentTimeRef.current();
-      for (const { mesh, mat, note } of noteMeshes) {
-        const t = note.time - ct;
-        if (t < -0.3 || t > lookaheadSeconds + 0.3) { mesh.visible = false; continue; }
-        mesh.visible = true;
-        mesh.position.z = t * UNITS_PER_SEC + NOTE_DEPTH / 2;
-        mat.opacity = note.time < playedUpToRef.current ? 0.15 : 1.0;
-      }
-
-      renderer.render(scene, camera);
-    }
-
-    animate();
-
     return () => {
-      destroyed = true;
-      cancelAnimationFrame(animId);
       ro.disconnect();
-      renderer.dispose();
-      if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
+      engine.stopRenderLoop();
+      scene.dispose();
+      engine.dispose();
+      if (container.contains(canvas)) container.removeChild(canvas);
       setLabelXs(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -242,7 +233,7 @@ export default function DrumHighway3D({
             left:          x,
             bottom:        10,
             transform:     'translateX(-50%)',
-            color:         laneColorCss(LANES[i].color),
+            color:         `#${LANES[i].color.toString(16).padStart(6, '0')}`,
             fontSize:      10,
             fontFamily:    'monospace',
             lineHeight:    1,
