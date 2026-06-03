@@ -18,6 +18,11 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # Install Claude CLI
 RUN npm install -g @anthropic-ai/claude-code
 
+# Non-root user — required because claude --dangerously-skip-permissions refuses to run as root
+RUN useradd -m -s /bin/bash agent
+
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+
+USER agent
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
