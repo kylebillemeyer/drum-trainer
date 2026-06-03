@@ -3,11 +3,14 @@
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { TEST_TRACK } from '@/lib/testTrack';
+import { loadTrack } from '@/lib/tracks';
 import { useTransport } from '@/lib/useTransport';
 import { useMetronome } from '@/lib/useMetronome';
+import { DrumTrack, LibraryEntry } from '@/types/music';
 import Link from 'next/link';
 import { AuthGate } from '@/components/AuthGate';
 import { useAuth } from '@/context/AuthContext';
+import TrackLibrary from '@/components/TrackLibrary/TrackLibrary';
 
 const DrumHighway = dynamic(
   () => import('@/components/DrumHighway/DrumHighway'),
@@ -20,6 +23,7 @@ const DrumHighway3D = dynamic(
 );
 
 type ViewMode = 'flat' | '3d';
+type AppView = 'library' | 'highway';
 
 const TEMPO_MIN  = 0.30;
 const TEMPO_MAX  = 2.00;
@@ -27,8 +31,10 @@ const TEMPO_STEP = 0.05;
 
 function HomeContent() {
   const { signOut, user } = useAuth();
+  const [appView, setAppView]           = useState<AppView>('library');
+  const [loadingTrack, setLoadingTrack] = useState(false);
 
-  const track = TEST_TRACK;
+  const [track, setTrack] = useState<DrumTrack>(TEST_TRACK);
 
   const [view, setView]                 = useState<ViewMode>('3d');
   const [showLabels, setShowLabels]     = useState(true);
@@ -147,19 +153,61 @@ function HomeContent() {
     // setPreparing stays true — rAF poll clears it once t >= resumeAt
   }
 
+  async function handleSelectTrack(entry: LibraryEntry) {
+    setLoadingTrack(true);
+    try {
+      const loaded = await loadTrack(entry);
+      setTrack(loaded);
+      setAppView('highway');
+    } catch (err) {
+      console.error('Failed to load track:', err);
+      alert('Failed to load track. Please try again.');
+    } finally {
+      setLoadingTrack(false);
+    }
+  }
+
+  function handleBackToLibrary() {
+    if (preparing || playing) {
+      pendingPlayRef.current = false;
+      pause();
+      setPreparing(false);
+      setCountBeat(null);
+    }
+    setAppView('library');
+  }
+
+
   return (
     <main className="flex flex-col h-screen bg-neutral-950 text-white">
 
       {/* ── Header ── */}
       <div className="flex items-center gap-4 px-4 py-3 border-b border-neutral-800">
-        <h1 className="text-sm font-mono tracking-widest text-neutral-400 uppercase">
-          Drum Trainer
-        </h1>
-        <span className="text-neutral-600">|</span>
-        <span className="text-sm text-neutral-300">{track.title}</span>
-        <span className="text-xs text-neutral-500">
-          {track.bpm} BPM · {track.timeSignature.join('/')}
-        </span>
+        {appView === 'highway' ? (
+          <button
+            onClick={handleBackToLibrary}
+            className="text-xs font-mono text-neutral-400 hover:text-neutral-200 transition-colors"
+          >
+            ← Library
+          </button>
+        ) : (
+          <h1 className="text-sm font-mono tracking-widest text-neutral-400 uppercase">
+            Drum Trainer
+          </h1>
+        )}
+
+        {appView === 'highway' && (
+          <>
+            <span className="text-neutral-600">|</span>
+            <span className="text-sm text-neutral-300">{track.title}</span>
+            {track.artist && (
+              <span className="text-xs text-neutral-500">{track.artist}</span>
+            )}
+            <span className="text-xs text-neutral-500">
+              {track.bpm} BPM · {track.timeSignature.join('/')}
+            </span>
+          </>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           <Link
@@ -169,20 +217,24 @@ function HomeContent() {
             Upload
           </Link>
 
-          <button
-            onClick={handlePlayPause}
-            className="px-4 py-1.5 text-sm font-mono rounded bg-neutral-800 hover:bg-neutral-700 transition-colors"
-          >
-            {preparing || playing ? 'Stop' : 'Play'}
-          </button>
+          {appView === 'highway' && (
+            <>
+              <button
+                onClick={handlePlayPause}
+                className="px-4 py-1.5 text-sm font-mono rounded bg-neutral-800 hover:bg-neutral-700 transition-colors"
+              >
+                {preparing || playing ? 'Stop' : 'Play'}
+              </button>
 
-          <button
-            onClick={() => setShowSettings(s => !s)}
-            className={`h-8 w-8 flex items-center justify-center rounded border transition-colors ${showSettings ? 'border-neutral-500 bg-neutral-700 text-white' : 'border-neutral-700 bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}`}
-            aria-label="Settings"
-          >
-            <span className="text-xl leading-none">⚙</span>
-          </button>
+              <button
+                onClick={() => setShowSettings(s => !s)}
+                className={`h-8 w-8 flex items-center justify-center rounded border transition-colors ${showSettings ? 'border-neutral-500 bg-neutral-700 text-white' : 'border-neutral-700 bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}`}
+                aria-label="Settings"
+              >
+                <span className="text-xl leading-none">⚙</span>
+              </button>
+            </>
+          )}
 
           <button
             onClick={signOut}
@@ -195,7 +247,7 @@ function HomeContent() {
       </div>
 
       {/* ── Settings modal ── */}
-      {showSettings && (
+      {showSettings && appView === 'highway' && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowSettings(false)} />
           <div className="fixed top-14 right-4 z-50 bg-neutral-900 border border-neutral-700 rounded-lg shadow-2xl w-56">
@@ -351,13 +403,25 @@ function HomeContent() {
         </div>
       )}
 
-      {/* ── Highway ── */}
-      <div className="flex-1">
-        {view === 'flat'
-          ? <DrumHighway   track={track} getCurrentTime={getCurrentTime} playedUpTo={playedUpTo} />
-          : <DrumHighway3D track={track} getCurrentTime={getCurrentTime} playedUpTo={playedUpTo} showLabels={showLabels} />
-        }
-      </div>
+      {/* ── Main content ── */}
+      {loadingTrack && (
+        <div className="flex-1 flex items-center justify-center text-sm text-neutral-500">
+          Loading track…
+        </div>
+      )}
+      {!loadingTrack && appView === 'library' && (
+        <div className="flex-1 overflow-hidden">
+          <TrackLibrary onSelect={handleSelectTrack} />
+        </div>
+      )}
+      {!loadingTrack && appView === 'highway' && (
+        <div className="flex-1">
+          {view === 'flat'
+            ? <DrumHighway   track={track} getCurrentTime={getCurrentTime} playedUpTo={playedUpTo} />
+            : <DrumHighway3D track={track} getCurrentTime={getCurrentTime} playedUpTo={playedUpTo} showLabels={showLabels} />
+          }
+        </div>
+      )}
     </main>
   );
 }
