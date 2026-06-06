@@ -26,10 +26,7 @@ export function useTransport(): TransportControls {
 
   useEffect(() => {
     const t = transportRef.current!;
-    return () => {
-      t.dispose();
-      transportRef.current = null;
-    };
+    return () => { t.dispose(); };
   }, []);
 
   const play = useCallback(async () => {
@@ -52,7 +49,7 @@ export function useTransport(): TransportControls {
   }, []);
 
   // Stable reference — highways capture this once, no effect re-runs
-  const getCurrentTime = useCallback(() => transportRef.current!.getTime(), []);
+  const getCurrentTime = useCallback(() => transportRef.current?.getTime() ?? 0, []);
 
   return {
     playing,
