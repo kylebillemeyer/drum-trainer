@@ -3,12 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { TEST_TRACK } from '@/lib/testTrack';
-import { parseMidi } from '@/lib/midiImport';
 import { useTransport } from '@/lib/useTransport';
 import { useMetronome } from '@/lib/useMetronome';
-import { DrumTrack } from '@/types/music';
+import Link from 'next/link';
+import { AuthGate } from '@/components/AuthGate';
 import { useAuth } from '@/context/AuthContext';
-import SignIn from '@/components/SignIn/SignIn';
 
 const DrumHighway = dynamic(
   () => import('@/components/DrumHighway/DrumHighway'),
@@ -26,22 +25,22 @@ const TEMPO_MIN  = 0.30;
 const TEMPO_MAX  = 2.00;
 const TEMPO_STEP = 0.05;
 
-export default function Home() {
-  const { user, loading, signOut } = useAuth();
+function HomeContent() {
+  const { signOut, user } = useAuth();
+
+  const track = TEST_TRACK;
 
   const [view, setView]                 = useState<ViewMode>('3d');
-  const [track, setTrack]               = useState<DrumTrack>(TEST_TRACK);
   const [showLabels, setShowLabels]     = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [metronome, setMetronome]       = useState(false);
-  const [countInBars, setCountInBars]   = useState(1);    // bars of clicks before track starts
-  const [preDelaySecs, setPreDelaySecs] = useState(1);    // silence (s) before count-in begins
-  const [preparing, setPreparing]       = useState(false); // true during pre-delay + count-in
+  const [countInBars, setCountInBars]   = useState(1);
+  const [preDelaySecs, setPreDelaySecs] = useState(1);
+  const [preparing, setPreparing]       = useState(false);
   const [countBeat, setCountBeat]       = useState<number | null>(null);
-  const [playedUpTo, setPlayedUpTo]     = useState(0); // furthest track position previously played
-  const fileInputRef   = useRef<HTMLInputElement>(null);
+  const [playedUpTo, setPlayedUpTo]     = useState(0);
   const pendingPlayRef = useRef(false);
-  const resumeAtRef    = useRef(0);  // track time the highway will resume from after count-in
+  const resumeAtRef    = useRef(0);
   const rewindRafRef   = useRef<number | null>(null);
 
   const { playing, rate, getCurrentTime, play, pause, setRate, transport } =
@@ -148,39 +147,6 @@ export default function Home() {
     // setPreparing stays true — rAF poll clears it once t >= resumeAt
   }
 
-  function handleImportClick() {
-    if (preparing || playing) {
-      pendingPlayRef.current = false;
-      pause();
-      setPreparing(false);
-      setCountBeat(null);
-    }
-    fileInputRef.current?.click();
-  }
-
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const buffer = await file.arrayBuffer();
-    try {
-      setTrack(parseMidi(buffer));
-    } catch (err) {
-      console.error('Failed to parse MIDI file:', err);
-      alert('Could not parse MIDI file. Make sure it is a valid .mid file.');
-    }
-    e.target.value = '';
-  }
-
-  if (loading) {
-    return (
-      <main className="flex items-center justify-center h-screen bg-neutral-950 text-white">
-        <span className="text-xs font-mono text-neutral-500 tracking-widest uppercase">Loading…</span>
-      </main>
-    );
-  }
-
-  if (!user) return <SignIn />;
-
   return (
     <main className="flex flex-col h-screen bg-neutral-950 text-white">
 
@@ -196,19 +162,12 @@ export default function Home() {
         </span>
 
         <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={handleImportClick}
+          <Link
+            href="/upload"
             className="px-3 py-1.5 text-xs font-mono rounded border border-neutral-700 bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
           >
-            Import MIDI
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".mid,.midi"
-            className="hidden"
-            onChange={handleFileChange}
-          />
+            Upload
+          </Link>
 
           <button
             onClick={handlePlayPause}
@@ -227,7 +186,8 @@ export default function Home() {
 
           <button
             onClick={signOut}
-            className="px-3 py-1.5 text-xs font-mono rounded border border-neutral-700 bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
+            className="px-3 py-1.5 text-xs font-mono rounded border border-neutral-700 bg-neutral-900 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
+            title={user?.email ?? 'Sign out'}
           >
             Sign out
           </button>
@@ -399,5 +359,13 @@ export default function Home() {
         }
       </div>
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <AuthGate>
+      <HomeContent />
+    </AuthGate>
   );
 }
