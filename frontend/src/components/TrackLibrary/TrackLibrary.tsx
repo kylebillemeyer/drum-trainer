@@ -4,13 +4,6 @@ import { useState, useEffect, useMemo } from 'react';
 import { LibraryEntry } from '@/types/music';
 import { fetchLibrary } from '@/lib/tracks';
 
-function formatDuration(seconds: number | null): string {
-  if (seconds == null) return '--:--';
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
 interface Props {
   onSelect: (entry: LibraryEntry) => void;
 }
@@ -24,7 +17,7 @@ export default function TrackLibrary({ onSelect }: Props) {
   useEffect(() => {
     fetchLibrary()
       .then(setEntries)
-      .catch(err => setError(String(err)))
+      .catch(err => setError(err instanceof Error ? err.message : JSON.stringify(err)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -87,7 +80,6 @@ export default function TrackLibrary({ onSelect }: Props) {
                 </div>
                 <div className="flex items-center gap-4 text-xs text-neutral-500 flex-shrink-0">
                   <span>{entry.bpm} BPM</span>
-                  <span>{formatDuration(entry.duration_seconds)}</span>
                 </div>
               </div>
             </button>

@@ -6,7 +6,7 @@ export async function fetchLibrary(): Promise<LibraryEntry[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('tracks')
-    .select('id, title, artist, genre, bpm, duration_seconds, midi_url, audio_url, uploader, uploaded_at')
+    .select('id, title, artist, genre, bpm, midi_url, audio_url, uploader, uploaded_at')
     .order('uploaded_at', { ascending: false });
   if (error) throw error;
   return data ?? [];
