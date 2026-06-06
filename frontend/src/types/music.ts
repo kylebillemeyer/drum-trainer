@@ -35,7 +35,6 @@ export interface LibraryEntry {
   artist: string;
   genre: string | null;
   bpm: number;
-  duration_seconds: number | null;
   midi_url: string;
   audio_url: string | null;
   uploader: string;
