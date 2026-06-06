@@ -7,6 +7,8 @@ import { parseMidi } from '@/lib/midiImport';
 import { useTransport } from '@/lib/useTransport';
 import { useMetronome } from '@/lib/useMetronome';
 import { DrumTrack } from '@/types/music';
+import { useAuth } from '@/context/AuthContext';
+import SignIn from '@/components/SignIn/SignIn';
 
 const DrumHighway = dynamic(
   () => import('@/components/DrumHighway/DrumHighway'),
@@ -25,6 +27,8 @@ const TEMPO_MAX  = 2.00;
 const TEMPO_STEP = 0.05;
 
 export default function Home() {
+  const { user, loading, signOut } = useAuth();
+
   const [view, setView]                 = useState<ViewMode>('3d');
   const [track, setTrack]               = useState<DrumTrack>(TEST_TRACK);
   const [showLabels, setShowLabels]     = useState(true);
@@ -167,6 +171,16 @@ export default function Home() {
     e.target.value = '';
   }
 
+  if (loading) {
+    return (
+      <main className="flex items-center justify-center h-screen bg-neutral-950 text-white">
+        <span className="text-xs font-mono text-neutral-500 tracking-widest uppercase">Loading…</span>
+      </main>
+    );
+  }
+
+  if (!user) return <SignIn />;
+
   return (
     <main className="flex flex-col h-screen bg-neutral-950 text-white">
 
@@ -209,6 +223,13 @@ export default function Home() {
             aria-label="Settings"
           >
             <span className="text-xl leading-none">⚙</span>
+          </button>
+
+          <button
+            onClick={signOut}
+            className="px-3 py-1.5 text-xs font-mono rounded border border-neutral-700 bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
+          >
+            Sign out
           </button>
         </div>
       </div>
