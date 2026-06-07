@@ -2,6 +2,7 @@
 repo_path      = "/Users/kyle/Documents/git/drum-trainer"
 worktrees_dir  = "/Users/kyle/Documents/git/drum-trainer-worktrees"
 docker_image   = "drum-trainer-agent"
+dockerfile     = "scripts/Dockerfile"
 log_file       = "/Users/kyle/Library/Logs/drum-trainer-daemon.log"
 ticket_provider = "plane"
 max_turns      = 50
