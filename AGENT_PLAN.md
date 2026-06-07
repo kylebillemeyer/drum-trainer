@@ -3,9 +3,9 @@ Add pitch-preserving audio backing track playback synchronized to the MIDI highw
 
 ## Tasks
 - [x] Write AGENT_PLAN.md
-- [ ] Create `frontend/src/lib/useAudioPlayer.ts` — hook that manages an HTMLAudioElement locked to Transport
-- [ ] Modify `frontend/src/app/track/[id]/page.tsx` — add audioUrl state, call useAudioPlayer
-- [ ] Run `npx tsc --noEmit` and fix any type errors
+- [x] Create `frontend/src/lib/useAudioPlayer.ts` — hook that manages an HTMLAudioElement locked to Transport
+- [x] Modify `frontend/src/app/track/[id]/page.tsx` — add audioUrl state, call useAudioPlayer
+- [x] Run `npx tsc --noEmit` and fix any type errors
 - [ ] Open PR
 
 ## Decisions / blockers
