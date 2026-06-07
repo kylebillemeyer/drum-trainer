@@ -2,6 +2,7 @@
 repo_path      = "/Users/kyle/Documents/git/drum-trainer"
 worktrees_dir  = "/Users/kyle/Documents/git/drum-trainer-worktrees"
 docker_image   = "drum-trainer-agent"
+dockerfile     = "scripts/Dockerfile"
 log_file       = "/Users/kyle/Library/Logs/drum-trainer-daemon.log"
 ticket_provider = "plane"
 max_turns      = 50
@@ -18,9 +19,8 @@ base_url       = "https://api.plane.so"
 workspace_slug = "kb-agent"
 project_id     = "f0f77d38-9069-444e-8770-229ade02c378"
 
-state_backlog      = "7be4fceb-21c0-4eba-941c-8c5103c0b3f3"
-state_in_progress  = "5957ff5b-e438-4b62-bd83-d573a2c81037"
-state_in_review    = "f43ddaed-bd8c-41f2-86d4-a761417e7694"
-
-label_spec_approved = "0c4454a3-7b12-474c-bc80-0fc882681599"
-label_needs_input   = "d90dcac2-76c7-4502-9c57-615ec0ec7945"
+state_backlog       = "7be4fceb-21c0-4eba-941c-8c5103c0b3f3"
+state_spec_approved = "a8120450-a6d2-48b3-8456-bbe5682f4d87"
+state_in_progress   = "5957ff5b-e438-4b62-bd83-d573a2c81037"
+state_needs_input   = "940647bb-e3ee-492d-b6c3-327dbc7a26a1"
+state_in_review     = "f43ddaed-bd8c-41f2-86d4-a761417e7694"
