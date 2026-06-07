@@ -21,8 +21,22 @@ export interface DrumNote {
 
 export interface DrumTrack {
   title: string;
+  artist?: string;
+  genre?: string;
   bpm: number;
   timeSignature: [number, number];
   notes: DrumNote[];
   durationSeconds: number;
+}
+
+export interface LibraryEntry {
+  id: string;
+  title: string;
+  artist: string;
+  genre: string | null;
+  bpm: number;
+  midi_url: string;
+  audio_url: string | null;
+  uploader: string;
+  uploaded_at: string;
 }
