@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { DrumTrack } from '@/types/music';
 import { LANES, LANE_INDEX } from '@/lib/lanes';
+import { useSettings } from '@/lib/SettingsContext';
 
 interface Props {
   track: DrumTrack;
   getCurrentTime: () => number;
   playedUpTo: number;
-  showLabels?: boolean;
   lookaheadSeconds?: number;
 }
 
@@ -39,9 +39,9 @@ export default function DrumHighway3D({
   track,
   getCurrentTime,
   playedUpTo,
-  showLabels = false,
   lookaheadSeconds = 3,
 }: Props) {
+  const { showLabels } = useSettings();
   const containerRef      = useRef<HTMLDivElement>(null);
   const getCurrentTimeRef = useRef(getCurrentTime);
   const playedUpToRef     = useRef(playedUpTo);
