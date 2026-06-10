@@ -7,6 +7,7 @@ import { TEST_TRACK } from '@/lib/testTrack';
 import { getTrackById, loadTrack } from '@/lib/tracks';
 import { useTransport } from '@/lib/useTransport';
 import { useMetronome } from '@/lib/useMetronome';
+import { useAudioPlayer } from '@/lib/useAudioPlayer';
 import { DrumTrack } from '@/types/music';
 import Link from 'next/link';
 import { AuthGate } from '@/components/AuthGate';
@@ -30,6 +31,7 @@ function TrackPageContent() {
   const { view, showLabels, metronome, countInBars, preDelaySecs } = useSettings();
 
   const [track, setTrack]         = useState<DrumTrack>(TEST_TRACK);
+  const [audioUrl, setAudioUrl]   = useState<string | null>(null);
   const [loading, setLoading]     = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -51,6 +53,7 @@ function TrackPageContent() {
         if (!entry) { setLoadError('Track not found.'); return; }
         const loaded = await loadTrack(entry);
         setTrack(loaded);
+        setAudioUrl(entry.audio_url);
       } catch (err) {
         setLoadError(err instanceof Error ? err.message : 'Failed to load track.');
       } finally {
@@ -87,6 +90,7 @@ function TrackPageContent() {
   const countingIn = preparing && playing;
 
   useMetronome(transport, track, metronome, playing, countingIn);
+  useAudioPlayer(transport, audioUrl, resumeAtRef, playing, rate);
 
   useEffect(() => {
     if (!countingIn) { setCountBeat(null); return; }
